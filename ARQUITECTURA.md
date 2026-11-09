@@ -115,6 +115,7 @@ Comportamiento:
 - `aplicar` lanza `ValueError` si la acción no es válida en ese estado o si `accion.origen` no coincide con `estado[accion.vm]`.
 - `sucesores` devuelve las acciones válidas **en este orden fijo**: `vm` ascendente y, dentro de cada VM, `destino` ascendente. El orden importa porque determina el desempate y los conteos de nodos (sección 5).
 - `validar_plan` devuelve el costo total si el plan es válido y lanza `PlanInvalido` con un mensaje si: alguna acción no es aplicable en su paso (incluye exceder una capacidad o migrar hacia X) o el estado final no es meta. Un plan vacío es válido solo si el estado inicial ya es meta (costo 0).
+- `con_servidor_a_vaciar` devuelve una copia con otro X (el `nombre` no cambia) y lanza `EscenarioInvalido` si el servidor está fuera de rango.
 - `con_servidor_a_vaciar` devuelve una copia del escenario con otro X y lanza `EscenarioInvalido` si `servidor` está fuera de `0..H-1`. No cambia capacidades, tamaños ni estado inicial.
 
 ### Módulo 2: `heuristicas/`
