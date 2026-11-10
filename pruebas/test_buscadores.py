@@ -123,6 +123,12 @@ def test_buscar_despacha_por_nombre():
     assert buscar(EJEMPLO, "ida").iteraciones == 1
 
 
+def test_buscar_ida_usa_transposicion():
+    r = buscar(SIN_SOLUCION_CON_CICLOS, "ida")
+    # Con tabla: 3 iteraciones y 6 nodos; sin tabla serian 2 y 3.
+    assert (r.estado, r.iteraciones, r.nodos_expandidos) == ("sin_solucion", 3, 6)
+
+
 def test_buscar_nombres_desconocidos():
     with pytest.raises(ValueError):
         buscar(EJEMPLO, "dijkstra")
