@@ -14,9 +14,10 @@ from escenarios import (
     generar_cluster,
     generar_no_triviales,
     guardar_escenario,
+    leer_metas,
 )
 from escenarios.generar import main as generar_main
-from escenarios.nucleo import _generar_con_metas, _leer_metas
+from escenarios.nucleo import _generar_con_metas
 from heuristicas import h1
 from modelo import Escenario, EscenarioInvalido
 
@@ -77,6 +78,25 @@ def test_cargar_rechaza_servidor_a_vaciar_fuera_de_rango(tmp_path):
     guardar_escenario(EJEMPLO, tmp_path)
     with pytest.raises(EscenarioInvalido):
         cargar_escenario(tmp_path, 4)
+
+
+def test_leer_metas(tmp_path):
+    assert leer_metas(tmp_path) == []
+    _escribir(tmp_path / "metas.csv", [COLUMNAS_METAS, (2, 5, 7), (0, 3, 4)])
+    metas = leer_metas(tmp_path)
+    assert metas == [(0, 3, 4), (2, 5, 7)]
+    assert all(isinstance(v, int) for fila in metas for v in fila)
+
+
+@pytest.mark.parametrize("filas", [
+    [("servidor_a_vaciar", "h1", "costo_optimo"), (0, 3, 4)],
+    [COLUMNAS_METAS, (0, 3, "cuatro")],
+    [COLUMNAS_METAS, (0, 3)],
+], ids=["encabezado", "no_entero", "faltan_valores"])
+def test_leer_metas_rechaza_archivos_mal_formados(tmp_path, filas):
+    _escribir(tmp_path / "metas.csv", filas)
+    with pytest.raises(EscenarioInvalido):
+        leer_metas(tmp_path)
 
 
 # --- generar_cluster ---
@@ -213,7 +233,7 @@ def test_linea_de_comandos(tmp_path):
     esperados = generar_no_triviales(4, 7, 6, TOPE)
     leidos = []
     for carpeta in sorted(tmp_path.iterdir()):
-        metas = _leer_metas(carpeta)
+        metas = leer_metas(carpeta)
         assert metas
         for x, h1_inicial, costo in metas:
             esc = cargar_escenario(carpeta, x)
@@ -240,7 +260,7 @@ def test_datos_treinta_o_mas_por_tamano(n_servidores, n_vms):
     for carpeta in _carpetas(n_servidores, n_vms):
         semilla = int(carpeta.name.split("_s")[1])
         base = generar_cluster(semilla, n_servidores, n_vms)
-        metas = _leer_metas(carpeta)
+        metas = leer_metas(carpeta)
         assert metas, carpeta.name
         for x, h1_inicial, costo in metas:
             esc = cargar_escenario(carpeta, x)
@@ -257,7 +277,7 @@ def test_datos_se_regeneran_igual(n_servidores, n_vms):
                  for m in _generar_con_metas(n_servidores, n_vms, 30, TOPE)}
     leidos = {}
     for carpeta in _carpetas(n_servidores, n_vms):
-        for x, h1_inicial, costo in _leer_metas(carpeta):
+        for x, h1_inicial, costo in leer_metas(carpeta):
             esc = cargar_escenario(carpeta, x)
             leidos[(esc.nombre, h1_inicial, costo)] = esc
     assert leidos == generados

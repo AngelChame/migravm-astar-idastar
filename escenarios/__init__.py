@@ -7,6 +7,7 @@ from escenarios.nucleo import (
     generar_cluster,
     generar_no_triviales,
     guardar_escenario,
+    leer_metas,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "generar_cluster",
     "generar_no_triviales",
     "guardar_escenario",
+    "leer_metas",
 ]

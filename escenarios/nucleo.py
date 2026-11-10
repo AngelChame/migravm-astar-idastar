@@ -104,8 +104,11 @@ def _guardar_metas(directorio: "Path | str", filas: list[tuple[int, int, int]]) 
     _escribir_tabla(Path(directorio) / "metas.csv", COLUMNAS_METAS, sorted(filas))
 
 
-def _leer_metas(directorio: "Path | str") -> list[tuple[int, int, int]]:
-    """Lee metas.csv; devuelve una lista vacia si el archivo no existe."""
+def leer_metas(directorio: "Path | str") -> list[tuple[int, int, int]]:
+    """Filas de metas.csv (servidor_a_vaciar, h1_inicial, costo_optimo), ordenadas.
+
+    Devuelve una lista vacia si el archivo no existe.
+    """
     ruta = Path(directorio) / "metas.csv"
     if not ruta.exists():
         return []
