@@ -65,7 +65,7 @@ Estos bloques son la fuente de verdad de nombres y firmas. Los cuerpos `...` los
 ```python
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Literal, NamedTuple, Optional, Sequence
+from typing import Callable, Literal, Mapping, NamedTuple, Optional, Sequence
 
 Estado = tuple[int, ...]  # Estado[i] = servidor que aloja la VM i
 
@@ -181,6 +181,7 @@ COLUMNAS_METAS = ("servidor_a_vaciar", "h1_inicial", "costo_optimo")
 
 
 def cargar_escenario(directorio: "Path | str", servidor_a_vaciar: int) -> Escenario: ...
+def leer_metas(directorio: "Path | str") -> list[tuple[int, int, int]]: ...
 def guardar_escenario(esc: Escenario, directorio: "Path | str") -> None: ...
 def generar_cluster(semilla: int, n_servidores: int, n_vms: int, factor: float = 1.03,
                     servidor_a_vaciar: int = 0, ocupados: tuple[int, ...] = (0,),
@@ -194,7 +195,7 @@ def generar_no_triviales(n_servidores: int, n_vms: int, cantidad: int, tope_nodo
 
 Comportamiento:
 
-- **Formato en disco.** Un clúster es una carpeta con `servidores.csv` (columnas `servidor,capacidad`) y `vms.csv` (columnas `vm,tamano,servidor`). El servidor a vaciar **no** se guarda ahí: lo recibe `cargar_escenario`, para poder vaciar distintos servidores del mismo clúster. `metas.csv` es opcional y lo escribe el generador: una fila por servidor a vaciar que resultó no trivial, con `h1_inicial` y `costo_optimo`. La carpeta de un clúster generado se llama `{H}x{V}_s{semilla}`. `cargar_escenario` le pone al escenario `nombre = "{carpeta}_x{X}"`, donde `carpeta` es el nombre de la carpeta; así, un escenario generado que se guarda en su carpeta se carga igual, nombre incluido.
+- **Formato en disco.** Un clúster es una carpeta con `servidores.csv` (columnas `servidor,capacidad`) y `vms.csv` (columnas `vm,tamano,servidor`). El servidor a vaciar **no** se guarda ahí: lo recibe `cargar_escenario`, para poder vaciar distintos servidores del mismo clúster. `metas.csv` es opcional y lo escribe el generador: una fila por servidor a vaciar que resultó no trivial, con `h1_inicial` y `costo_optimo`. La carpeta de un clúster generado se llama `{H}x{V}_s{semilla}`. `cargar_escenario` le pone al escenario `nombre = "{carpeta}_x{X}"`, donde `carpeta` es el nombre de la carpeta; así, un escenario generado que se guarda en su carpeta se carga igual, nombre incluido. `leer_metas` devuelve las filas de `metas.csv` como tuplas `(servidor_a_vaciar, h1_inicial, costo_optimo)` ordenadas, o una lista vacía si el archivo no existe; un archivo mal formado lanza `EscenarioInvalido`.
 - **Generador.** `generar_cluster` usa `random.Random(semilla)` y este orden de sorteos: primero los V tamaños con `randint(1, 4)`; luego, hasta `max_intentos` veces, una asignación con `randrange(H)` por VM. Capacidad de todos los servidores: `int(suma_de_tamanos / (H - 1) * factor) + 1`. Acepta la primera asignación en que ninguna carga supera la capacidad y todos los servidores de `ocupados` tienen carga > 0. Devuelve `None` si no la encuentra. Con los valores por omisión, el resultado es el mismo para la misma semilla.
 - **No trivial.** `es_no_trivial` devuelve `True` si el costo óptimo es mayor que `h1(estado inicial)`, `False` si es igual, y `None` si la búsqueda llegó al tope o no hay solución (se descarta el escenario). Con `algoritmo="astar"` usa A* con `h2`; para 10×32 se puede pasar `"ida"`.
 - `generar_no_triviales` recorre semillas desde `semilla_inicial` y, para cada clúster generado, prueba cada servidor de `servidores_a_vaciar`. Devuelve `cantidad` escenarios (pares clúster y servidor), con `nombre` de la forma `"{H}x{V}_s{semilla}_x{X}"`. Un clúster cuenta una vez por cada servidor a vaciar que resulte no trivial. `algoritmo` se pasa a `es_no_trivial` y por omisión es `"ida"`: es óptimo como `"astar"` y clasifica igual siempre que ambos resuelvan, y es mucho más rápido. Con tope de 150 000 da el mismo conjunto que `"astar"` en 4×7, 5×10, 6×16 y 8×24; en 10×32, `"astar"` llega al tope en `10x32_s39_x0` y descarta ese caso, que `"ida"` resuelve como no trivial.
@@ -231,20 +232,24 @@ class Medicion:
 
 
 def medir(esc: Escenario, algoritmo: str, heuristica: str = "h2",
-          tope_nodos: Optional[int] = None, con_memoria: bool = False) -> Medicion: ...
+          tope_nodos: Optional[int] = None, con_memoria: bool = False,
+          tiempo_minimo_s: float = 0.2) -> Medicion: ...
 def correr_lote(escenarios: Sequence[Escenario], configuraciones: Sequence[tuple[str, str]],
-                tope_nodos: int, con_memoria: bool = False) -> list[Medicion]: ...
+                tope_nodos: int, con_memoria: bool = False,
+                costos_optimos: Optional[Mapping[str, int]] = None,
+                tiempo_minimo_s: float = 0.2) -> list[Medicion]: ...
 def escribir_csv(mediciones: Sequence[Medicion], ruta: "Path | str") -> None: ...
 def resumen_por_algoritmo(mediciones: Sequence[Medicion]) -> list[dict]: ...
 ```
 
 Comportamiento:
 
-- `tiempo_cpu_s` se mide con `time.process_time()` alrededor de la búsqueda. `memoria_pico_kb` usa `tracemalloc` y solo se llena si `con_memoria=True`; se corre en una pasada **aparte** de la del tiempo porque `tracemalloc` hace más lenta la ejecución.
+- `medir` acepta los algoritmos de `buscar` (`"ucs"`, `"voraz"`, `"astar"`, `"ida"`) y además `"ida_sin_tabla"`, que llama a `ida_estrella(..., transposicion=False)`; la columna `algoritmo` dice `"ida_sin_tabla"`. `"ida_sin_tabla"` exige `tope_nodos` (lanza `ValueError` si es `None`) porque puede ser exponencial. Un algoritmo desconocido lanza `ValueError`.
+- `tiempo_cpu_s` se mide con `time.process_time()` alrededor de la búsqueda. Como en Windows ese reloj avanza en pasos de unos 15.6 ms, la búsqueda se repite hasta acumular `tiempo_minimo_s` y se reporta el promedio por búsqueda; con `tiempo_minimo_s=0` se corre una sola vez. Nodos, costo, plan y `estados_guardados` salen de la primera repetición. `memoria_pico_kb` usa `tracemalloc` y solo se llena si `con_memoria=True`; se corre en una pasada **aparte** de la del tiempo porque `tracemalloc` hace más lenta la ejecución.
 - `estados_guardados` viene del `Resultado` y es la medida de memoria que no depende de la herramienta.
-- `configuraciones` es una lista de pares `(algoritmo, heuristica)`. `costo_optimo` lo llena `correr_lote` con el costo de A* con `h2` cuando ese algoritmo está en la corrida; si no, queda en `None`.
+- `configuraciones` es una lista de pares `(algoritmo, heuristica)`; las filas salen por escenario y, dentro de cada uno, en el orden de `configuraciones`. `costo_optimo` es un valor por escenario que `correr_lote` repite en todas sus filas (también en las de voraz): si `costos_optimos` (nombre del escenario -> costo) tiene el escenario, se usa ese valor; si no, el costo de cualquier algoritmo óptimo de la corrida que haya resuelto (`"ucs"`, `"astar"`, `"ida"`, `"ida_sin_tabla"`); si ninguno resolvió, `None`. Si dos fuentes no coinciden, lanza `ValueError`.
 - `migraciones` es `len(plan)`. Las columnas del CSV son exactamente `COLUMNAS_MEDICION`, en ese orden, y coinciden con los campos de `Medicion`.
-- `resumen_por_algoritmo` devuelve una fila por algoritmo y heurística con: casos, resueltos, mediana y máximo de nodos expandidos (solo resueltos), mediana de tiempo y máximo de `estados_guardados`.
+- `resumen_por_algoritmo` devuelve una fila por algoritmo y heurística, en orden de primera aparición, con las claves `algoritmo`, `heuristica`, `casos`, `resueltos`, `nodos_mediana` y `nodos_max` (solo resueltos), `tiempo_mediana_s` (solo resueltos), `estados_guardados_max` (todos los casos), `memoria_pico_max_kb` y `casos_con_memoria` (casos con `memoria_pico_kb` medido). Sin resueltos o sin memoria medida, el valor correspondiente es `None`. No agrupa por tamaño: la tabla de cinco tamaños la arma la línea de comandos llamándola una vez por tamaño.
 
 ### Módulo 6: `web/`
 
