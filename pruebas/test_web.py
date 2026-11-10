@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -199,3 +200,53 @@ def test_precalculado_devuelve_filas():
                                                       f["heuristica"]) == (10, "astar", "h2"))
     assert sin_memoria["memoria_pico_max_kb"] is None
     assert isinstance(datos["mediciones"][0]["tiempo_cpu_s"], float)
+
+
+# --- Pantalla (web/estatico/) ---
+
+ESTATICO = Path(__file__).resolve().parent.parent / "web" / "estatico"
+
+
+def test_raiz_devuelve_el_index():
+    r = cliente.get("/")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert '<html lang="es">' in r.text
+    assert "Buscar plan" in r.text and "Comparar todos" in r.text
+    assert 'href="estilos.css"' in r.text and 'src="app.js"' in r.text
+
+
+@pytest.mark.parametrize("ruta, tipo", [("/estilos.css", "text/css"),
+                                        ("/app.js", "javascript"),
+                                        ("/index.html", "text/html")])
+def test_archivos_estaticos_se_sirven(ruta, tipo):
+    r = cliente.get(ruta)
+    assert r.status_code == 200
+    assert tipo in r.headers["content-type"]
+
+
+def test_ruta_inexistente_da_404():
+    assert cliente.get("/no_existe.js").status_code == 404
+
+
+def test_pantalla_sin_cdn_ni_recursos_externos():
+    for nombre in ("index.html", "estilos.css", "app.js"):
+        texto = (ESTATICO / nombre).read_text(encoding="utf-8")
+        assert "http://" not in texto and "https://" not in texto, nombre
+        assert "@import" not in texto, nombre
+
+
+def test_ids_que_usa_app_js_existen_en_el_index():
+    html = (ESTATICO / "index.html").read_text(encoding="utf-8")
+    js = (ESTATICO / "app.js").read_text(encoding="utf-8")
+    ids_html = re.findall(r'\bid="([^"]+)"', html)
+    assert len(ids_html) == len(set(ids_html))
+    usados = set(re.findall(r'\$\("([^"]+)"\)', js))
+    assert usados and usados <= set(ids_html), usados - set(ids_html)
+
+
+def test_app_js_usa_las_rutas_de_la_api():
+    js = (ESTATICO / "app.js").read_text(encoding="utf-8")
+    for ruta in ("/api/escenarios", "/api/buscar", "/api/comparar", "/api/precalculado"):
+        assert f'"{ruta}"' in js, ruta
+    assert "Calculando" in js

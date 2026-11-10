@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MigraVM, planificador de migraciones</title>
+<link rel="stylesheet" href="estilos.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="encabezado">
+  <div class="marca">
+    <h1>MigraVM</h1>
+    <p>Planificador de migraciones de máquinas virtuales para vaciar un servidor</p>
+  </div>
+  <p id="estado-general" class="estado-general" role="status" aria-live="polite"></p>
+</header>
+
+<main class="contenido">
+  <!-- Panel izquierdo: escenario y búsqueda -->
+  <section class="columna izquierda" aria-labelledby="titulo-escenario">
+    <div class="tarjeta">
+      <h2 id="titulo-escenario">Escenario</h2>
+      <div class="campo">
+        <label for="escenario">Escenario</label>
+        <select id="escenario"></select>
+      </div>
+      <div class="campo">
+        <label for="servidor-a-vaciar">Servidor a vaciar (meta)</label>
+        <select id="servidor-a-vaciar"></select>
+      </div>
+      <p id="detalle-escenario" class="nota"></p>
+      <h3>Máquinas virtuales</h3>
+      <div class="tabla-caja">
+        <table id="tabla-vms" class="tabla">
+          <thead><tr><th scope="col">VM</th><th scope="col">Tamaño</th><th scope="col">Servidor</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <form id="formulario" class="tarjeta">
+      <h2>Búsqueda</h2>
+      <div class="campo">
+        <label for="algoritmo">Algoritmo</label>
+        <select id="algoritmo">
+          <option value="ucs">Costo uniforme</option>
+          <option value="voraz">Voraz</option>
+          <option value="astar" selected>A*</option>
+          <option value="ida">IDA* (con tabla de transposición)</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="heuristica">Heurística</label>
+        <select id="heuristica">
+          <option value="h1">h1: GB que siguen en X</option>
+          <option value="h2" selected>h2: h1 + VM mínima si alguna no cabe</option>
+          <option value="h0">h0: cero</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="tope">Tope de nodos</label>
+        <input id="tope" type="number" min="1" max="150000" step="1" value="150000" inputmode="numeric">
+      </div>
+      <button id="boton-buscar" type="submit" class="boton primario ancho">Buscar plan</button>
+      <button id="boton-comparar" type="button" class="boton ancho">Comparar todos</button>
+    </form>
+  </section>
+
+  <!-- Centro: clúster y plan -->
+  <section class="columna centro" aria-labelledby="titulo-cluster">
+    <div class="tarjeta">
+      <div class="fila-titulo">
+        <h2 id="titulo-cluster">Clúster</h2>
+        <div class="botones">
+          <button id="boton-anterior" type="button" class="boton" disabled>Anterior</button>
+          <button id="boton-siguiente" type="button" class="boton primario" disabled>Siguiente</button>
+        </div>
+      </div>
+      <p id="mensaje-busqueda" class="mensaje" role="status" aria-live="polite"></p>
+      <div id="servidores" class="servidores"></div>
+      <ul class="leyenda">
+        <li><span class="muestra vm"></span>VM con su tamaño en GB</li>
+        <li><span class="muestra movida"></span>VM migrada en este paso</li>
+        <li><span class="muestra mantenimiento"></span>Servidor a vaciar</li>
+      </ul>
+    </div>
+
+    <div class="tarjeta">
+      <h2 id="titulo-plan">Plan</h2>
+      <ol id="plan" class="plan"></ol>
+    </div>
+
+    <div id="tarjeta-precalculado" class="tarjeta" hidden>
+      <h2>Resultados precalculados</h2>
+      <p class="nota">Este tamaño no se calcula en vivo (más de 8 servidores o más de 24 VM). Estos son los resultados de la corrida por lotes (<code>medicion/resultados/</code>).</p>
+      <h3>Este escenario</h3>
+      <div class="tabla-caja">
+        <table id="tabla-precalculado-escenario" class="tabla">
+          <thead><tr><th scope="col">Algoritmo</th><th scope="col">Estado</th><th scope="col">Costo</th><th scope="col">Nodos</th><th scope="col">Estados guardados</th><th scope="col">Tiempo (s)</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <h3>Resumen del tamaño</h3>
+      <div class="tabla-caja">
+        <table id="tabla-precalculado-resumen" class="tabla">
+          <thead><tr><th scope="col">Algoritmo</th><th scope="col">Resueltos</th><th scope="col">Nodos (mediana / máx.)</th><th scope="col">Tiempo mediano (s)</th><th scope="col">Estados guardados máx.</th><th scope="col">Memoria pico máx. (KB)</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Derecha: estado del nodo y comparación -->
+  <section class="columna derecha" aria-labelledby="titulo-nodo">
+    <div class="tarjeta">
+      <h2 id="titulo-nodo">Estado del nodo</h2>
+      <p id="estado-s" class="estado-s">s = –</p>
+      <div class="metricas">
+        <div class="metrica"><span>g, costo acumulado</span><strong id="valor-g">–</strong></div>
+        <div class="metrica"><span id="etiqueta-f">f = g + h</span><strong id="valor-f">–</strong></div>
+        <div class="metrica"><span>h1</span><strong id="valor-h1">–</strong></div>
+        <div class="metrica"><span>h2</span><strong id="valor-h2">–</strong></div>
+      </div>
+      <p id="resumen-busqueda" class="nota"></p>
+    </div>
+
+    <div class="tarjeta">
+      <h2>Comparación de algoritmos</h2>
+      <div class="tabla-caja">
+        <table id="tabla-comparacion" class="tabla">
+          <thead><tr><th scope="col">Algoritmo</th><th scope="col">Costo</th><th scope="col">Nodos</th><th scope="col">Óptimo</th></tr></thead>
+          <tbody><tr><td colspan="4" class="vacio">Pulse "Comparar todos".</td></tr></tbody>
+        </table>
+      </div>
+      <p class="nota">Nodos = nodos expandidos. Costo en GB copiados. "Óptimo" compara con el menor costo de los algoritmos óptimos que resolvieron.</p>
+    </div>
+  </section>
+</main>
+</body>
+</html>
