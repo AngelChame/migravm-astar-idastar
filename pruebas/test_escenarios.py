@@ -1,5 +1,6 @@
 import csv
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -207,3 +208,42 @@ def test_linea_de_comandos(tmp_path):
             leidos.append(esc)
     assert sorted(leidos, key=lambda e: e.nombre) == sorted(esperados, key=lambda e: e.nombre)
     assert COLUMNAS_METAS == ("servidor_a_vaciar", "h1_inicial", "costo_optimo")
+
+
+# --- Datos versionados en escenarios/datos/ ---
+
+DATOS = Path(__file__).resolve().parent.parent / "escenarios" / "datos"
+TAMANOS = [(4, 7), (5, 10), (6, 16), (8, 24), (10, 32)]
+
+
+def _carpetas(n_servidores, n_vms):
+    return sorted(DATOS.glob(f"{n_servidores}x{n_vms}_s*"))
+
+
+@pytest.mark.parametrize("n_servidores, n_vms", TAMANOS, ids=[f"{h}x{v}" for h, v in TAMANOS])
+def test_datos_treinta_o_mas_por_tamano(n_servidores, n_vms):
+    filas = 0
+    for carpeta in _carpetas(n_servidores, n_vms):
+        semilla = int(carpeta.name.split("_s")[1])
+        base = generar_cluster(semilla, n_servidores, n_vms)
+        metas = _leer_metas(carpeta)
+        assert metas, carpeta.name
+        for x, h1_inicial, costo in metas:
+            esc = cargar_escenario(carpeta, x)
+            assert esc == replace(base, servidor_a_vaciar=x, nombre=f"{carpeta.name}_x{x}")
+            assert h1(esc, esc.inicial) == h1_inicial
+            assert costo > h1_inicial
+            filas += 1
+    assert filas >= 30
+
+
+@pytest.mark.parametrize("n_servidores, n_vms", TAMANOS, ids=[f"{h}x{v}" for h, v in TAMANOS])
+def test_datos_se_regeneran_igual(n_servidores, n_vms):
+    generados = {(m.escenario.nombre, m.h1_inicial, m.costo_optimo): m.escenario
+                 for m in _generar_con_metas(n_servidores, n_vms, 30, TOPE)}
+    leidos = {}
+    for carpeta in _carpetas(n_servidores, n_vms):
+        for x, h1_inicial, costo in _leer_metas(carpeta):
+            esc = cargar_escenario(carpeta, x)
+            leidos[(esc.nombre, h1_inicial, costo)] = esc
+    assert leidos == generados
