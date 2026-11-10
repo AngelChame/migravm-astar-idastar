@@ -188,16 +188,17 @@ def generar_cluster(semilla: int, n_servidores: int, n_vms: int, factor: float =
 def es_no_trivial(esc: Escenario, tope_nodos: int, algoritmo: str = "astar") -> Optional[bool]: ...
 def generar_no_triviales(n_servidores: int, n_vms: int, cantidad: int, tope_nodos: int,
                          semilla_inicial: int = 0, factor: float = 1.03,
-                         servidores_a_vaciar: tuple[int, ...] = (0, 1, 2)) -> list[Escenario]: ...
+                         servidores_a_vaciar: tuple[int, ...] = (0, 1, 2),
+                         algoritmo: str = "ida") -> list[Escenario]: ...
 ```
 
 Comportamiento:
 
-- **Formato en disco.** Un clúster es una carpeta con `servidores.csv` (columnas `servidor,capacidad`) y `vms.csv` (columnas `vm,tamano,servidor`). El servidor a vaciar **no** se guarda ahí: lo recibe `cargar_escenario`, para poder vaciar distintos servidores del mismo clúster. `metas.csv` es opcional y lo escribe el generador: una fila por servidor a vaciar que resultó no trivial, con `h1_inicial` y `costo_optimo`.
+- **Formato en disco.** Un clúster es una carpeta con `servidores.csv` (columnas `servidor,capacidad`) y `vms.csv` (columnas `vm,tamano,servidor`). El servidor a vaciar **no** se guarda ahí: lo recibe `cargar_escenario`, para poder vaciar distintos servidores del mismo clúster. `metas.csv` es opcional y lo escribe el generador: una fila por servidor a vaciar que resultó no trivial, con `h1_inicial` y `costo_optimo`. La carpeta de un clúster generado se llama `{H}x{V}_s{semilla}`. `cargar_escenario` le pone al escenario `nombre = "{carpeta}_x{X}"`, donde `carpeta` es el nombre de la carpeta; así, un escenario generado que se guarda en su carpeta se carga igual, nombre incluido.
 - **Generador.** `generar_cluster` usa `random.Random(semilla)` y este orden de sorteos: primero los V tamaños con `randint(1, 4)`; luego, hasta `max_intentos` veces, una asignación con `randrange(H)` por VM. Capacidad de todos los servidores: `int(suma_de_tamanos / (H - 1) * factor) + 1`. Acepta la primera asignación en que ninguna carga supera la capacidad y todos los servidores de `ocupados` tienen carga > 0. Devuelve `None` si no la encuentra. Con los valores por omisión, el resultado es el mismo para la misma semilla.
 - **No trivial.** `es_no_trivial` devuelve `True` si el costo óptimo es mayor que `h1(estado inicial)`, `False` si es igual, y `None` si la búsqueda llegó al tope o no hay solución (se descarta el escenario). Con `algoritmo="astar"` usa A* con `h2`; para 10×32 se puede pasar `"ida"`.
-- `generar_no_triviales` recorre semillas desde `semilla_inicial` y, para cada clúster generado, prueba cada servidor de `servidores_a_vaciar`. Devuelve `cantidad` escenarios (pares clúster y servidor), con `nombre` de la forma `"{H}x{V}_s{semilla}_x{X}"`. Un clúster cuenta una vez por cada servidor a vaciar que resulte no trivial.
-- Línea de comandos: `python -m escenarios.generar --servidores 8 --vms 24 --cantidad 30 --tope 150000 --salida escenarios/datos`.
+- `generar_no_triviales` recorre semillas desde `semilla_inicial` y, para cada clúster generado, prueba cada servidor de `servidores_a_vaciar`. Devuelve `cantidad` escenarios (pares clúster y servidor), con `nombre` de la forma `"{H}x{V}_s{semilla}_x{X}"`. Un clúster cuenta una vez por cada servidor a vaciar que resulte no trivial. `algoritmo` se pasa a `es_no_trivial` y por omisión es `"ida"`: es óptimo como `"astar"` y clasifica igual siempre que ambos resuelvan, y es mucho más rápido. Con tope de 150 000 da el mismo conjunto que `"astar"` en 4×7, 5×10, 6×16 y 8×24; en 10×32, `"astar"` llega al tope en `10x32_s39_x0` y descarta ese caso, que `"ida"` resuelve como no trivial.
+- Línea de comandos: `python -m escenarios.generar --servidores 8 --vms 24 --cantidad 30 --tope 150000 --algoritmo ida --salida escenarios/datos`. `--algoritmo` es opcional (por omisión `ida`).
 
 ### Módulo 5: `medicion/`
 
