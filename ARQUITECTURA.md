@@ -23,7 +23,7 @@ Los índices de servidores y de VM empiezan en 0.
 migravm-astar-idastar/
   ARQUITECTURA.md
   pytest.ini               # [pytest] pythonpath = .   testpaths = pruebas
-  requirements.txt         # pytest; fastapi y uvicorn desde el módulo 6
+  requirements.txt         # pytest; fastapi, uvicorn y httpx desde el módulo 6
   modelo/                  # módulo 1
   heuristicas/             # módulo 2
   buscadores/              # módulo 3
@@ -49,7 +49,7 @@ web           <- todos los anteriores
 
 ## 3. Convenciones generales
 
-- Python 3.10 o superior. Los módulos 1 a 5 usan solo la biblioteca estándar; las pruebas usan `pytest`; la web usa `fastapi` y `uvicorn`.
+- Python 3.10 o superior. Los módulos 1 a 5 usan solo la biblioteca estándar; las pruebas usan `pytest` (y `httpx` para `TestClient`); la web usa `fastapi` y `uvicorn`.
 - Estados, capacidades y tamaños son tuplas de `int`; nunca listas. Los estados son hashables.
 - Las funciones de los módulos 1 a 4 son puras: no imprimen, no leen archivos (salvo `escenarios`) y no modifican sus argumentos.
 - Identificadores en español, en ASCII y sin acentos (`tamanos`, `iteraciones`).
@@ -253,16 +253,20 @@ Comportamiento:
 
 ### Módulo 6: `web/`
 
-Aplicación FastAPI en `web/app.py` (objeto `app`). Sirve `web/estatico/` en `/`. Todas las respuestas son JSON.
+Aplicación FastAPI en `web/app.py` (objeto `app`). Sirve `web/estatico/` en `/` (`GET /` devuelve `index.html`). Todas las respuestas de `/api/` son JSON. Los endpoints son síncronos (`def`), para que FastAPI los corra en su grupo de hilos. Se arranca con `uvicorn web.app:app` desde la raíz del repositorio.
 
 | Ruta | Entrada | Salida |
 | --- | --- | --- |
-| `GET /api/escenarios` | | Lista de `{nombre, servidores, vms}` de las carpetas de `escenarios/datos/` |
+| `GET /api/escenarios` | | Lista, una entrada por fila de `metas.csv` de cada carpeta de `escenarios/datos/`: `{nombre, servidores, vms, en_vivo, escenario}` |
 | `POST /api/buscar` | `{escenario, algoritmo, heuristica, tope_nodos}` | Una solución (ver abajo) |
-| `POST /api/comparar` | `{escenario, tope_nodos}` | Lista de soluciones: costo uniforme, voraz, A* con `h1` y `h2`, IDA* con `h2` |
-| `GET /api/precalculado` | | Filas de `medicion/resultados/` para los tamaños que no se calculan en vivo |
+| `POST /api/comparar` | `{escenario, tope_nodos, heuristicas}` | Lista de soluciones (ver abajo) |
+| `GET /api/precalculado` | | `{resumen, mediciones}` leídos de `medicion/resultados/` (ver abajo) |
 
-`escenario` es un objeto `{capacidades, tamanos, inicial, servidor_a_vaciar}` con los mismos nombres y tipos que `Escenario` (listas JSON en lugar de tuplas). La API lo convierte a `Escenario`, llama a `validar_escenario` y responde 422 con el mensaje si es inválido.
+- **`/api/escenarios`.** `nombre` es `"{carpeta}_x{X}"` (el mismo de `cargar_escenario`), `en_vivo` es `true` si `servidores <= 8` y `vms <= 24`, y `escenario` es `{capacidades, tamanos, inicial, servidor_a_vaciar}`, listo para mandarlo a `/api/buscar` o `/api/comparar` sin otra ruta. Orden: por tamaño (servidores y VM), luego semilla y luego X. Con los datos versionados son 150 entradas.
+- **Entrada.** `escenario` es un objeto `{capacidades, tamanos, inicial, servidor_a_vaciar}` con los mismos nombres y tipos que `Escenario` (listas JSON en lugar de tuplas). La API lo convierte a `Escenario` (con tuplas), llama a `validar_escenario` y responde 422 con el mensaje si es inválido. `algoritmo` es obligatorio (`"ucs"`, `"voraz"`, `"astar"`, `"ida"`); `heuristica` es opcional (`"h2"` por omisión; con `"ucs"` se ignora y la solución dice `"h0"`); `tope_nodos` es opcional (150 000 por omisión) y debe estar entre 1 y 150 000.
+- **Errores (422).** Escenario inválido, algoritmo o heurística desconocidos, `tope_nodos` fuera de 1..150 000, campos faltantes o de otro tipo, y escenarios de más de 8 servidores o más de 24 VM. El cuerpo es `{"detail": ...}`.
+- **`/api/comparar`.** Sin `heuristicas` corre, en este orden: costo uniforme, voraz con `h2`, A* con `h1`, A* con `h2` e IDA* con `h2` (5 soluciones). Con `heuristicas` (lista no vacía de nombres de `HEURISTICAS`, sin repetidos) corre costo uniforme y luego, para cada algoritmo en el orden voraz, A*, IDA*, una solución por heurística en el orden de la lista.
+- **`/api/precalculado`.** Lee con el módulo `csv` `resumen.csv` y los `mediciones_*.csv`. `resumen` trae todas las filas de `resumen.csv` (los cinco tamaños); `mediciones` trae las filas de los tamaños que no se calculan en vivo (más de 8 servidores o más de 24 VM; hoy, 10×32). Los números se devuelven como números y las celdas vacías como `null`.
 
 Solución:
 
@@ -270,18 +274,23 @@ Solución:
 {
   "algoritmo": "astar", "heuristica": "h2", "estado": "resuelto",
   "costo": 4, "nodos_expandidos": 5, "estados_guardados": 17,
-  "iteraciones": null, "tiempo_cpu_s": 0.0004,
+  "iteraciones": null, "tiempo_cpu_s": 0.0004, "tope_nodos": 150000,
+  "inicial": {"cargas": [3, 4, 4, 4], "h1": 3, "h2": 4},
   "plan": [
-    {"paso": 1, "vm": 1, "origen": 3, "destino": 1, "costo": 1, "cargas_despues": [3, 5, 4, 3]},
-    {"paso": 2, "vm": 2, "origen": 0, "destino": 3, "costo": 3, "cargas_despues": [0, 5, 4, 6]}
+    {"paso": 1, "vm": 1, "origen": 3, "destino": 1, "costo": 1, "cargas_despues": [3, 5, 4, 3],
+     "g": 1, "h1": 3, "h2": 3},
+    {"paso": 2, "vm": 2, "origen": 0, "destino": 3, "costo": 3, "cargas_despues": [0, 5, 4, 6],
+     "g": 4, "h1": 0, "h2": 0}
   ]
 }
 ```
 
 (Los valores de `estados_guardados` y `tiempo_cpu_s` son ilustrativos; el resto es el ejemplo de la sección 6.)
 
+- `tiempo_cpu_s` se mide con `time.process_time()` alrededor de una sola búsqueda (sin las repeticiones del módulo 5).
+- `inicial` describe el estado inicial (cargas, `h1` y `h2`) y cada paso del plan agrega `g` (costo acumulado), `h1` y `h2` del estado después del paso, para que la pantalla muestre g, h₁, h₂ y f sin recalcular heurísticas. Con `estado` distinto de `"resuelto"`, `costo` y `plan` son `null`.
 - En vivo se aceptan escenarios de hasta 8 servidores y 24 VM; con más, la API responde 422 y la pantalla muestra los resultados de `/api/precalculado`.
-- La búsqueda corre en el servidor con un `tope_nodos` obligatorio (valor por omisión 150 000) y devuelve `estado: "tope"` si lo alcanza.
+- La búsqueda corre en el servidor con un `tope_nodos` obligatorio (valor por omisión 150 000) y devuelve `estado: "tope"` si lo alcanza. Mientras espera, la pantalla muestra "calculando".
 
 ## 5. Conteo, desempate y orden (fijan los números de verificación)
 
@@ -373,6 +382,6 @@ Cinco tamaños (servidores por VM): 4×7, 5×10, 6×16, 8×24 y 10×32. Al menos
 | 3 `buscadores/` | Tabla del ejemplo (costos y nodos); caso sin solución; `tope_nodos=1` en el ejemplo da `"tope"`; todo plan devuelto pasa `validar_plan`; las 12 no triviales de 8×24 reproducen la tabla de la sección 6 |
 | 4 `escenarios/` | Guardar y cargar un escenario da el mismo `Escenario`; el generador reproduce la semilla 0 y las 12 no triviales de 60; 30 o más no triviales por tamaño |
 | 5 `medicion/` | `medir` y `correr_lote` sobre el ejemplo; el CSV tiene exactamente `COLUMNAS_MEDICION`; tabla comparativa de los cinco tamaños |
-| 6 `web/` | Con `TestClient`: `POST /api/buscar` sobre el ejemplo devuelve costo 4 y un plan de 2 pasos; un escenario inválido responde 422; un tamaño mayor que 8×24 responde 422 |
+| 6 `web/` | Con `TestClient`: `POST /api/buscar` sobre el ejemplo devuelve costo 4 y un plan de 2 pasos; un escenario inválido responde 422; un tamaño mayor que 8×24 responde 422; `/api/comparar` devuelve 5 soluciones; `/api/escenarios` devuelve 150 escenarios; `/api/precalculado` devuelve filas; `GET /` devuelve el `index.html` |
 
 Se corren todas con `pytest` desde la raíz del repositorio.
