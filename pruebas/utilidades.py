@@ -1,32 +1,9 @@
-"""Utilidades de las pruebas: copia provisional del generador y enumeracion del espacio."""
+"""Utilidades de las pruebas: enumeracion del espacio de estados y h* por Dijkstra."""
 import heapq
-import random
 from collections import deque
 from itertools import count
-from typing import Optional
 
-from modelo import Escenario, Estado, cargas, es_meta, sucesores
-
-
-def _generar_cluster_provisional(semilla: int, n_servidores: int, n_vms: int,
-                                 factor: float = 1.03, servidor_a_vaciar: int = 0,
-                                 ocupados: tuple[int, ...] = (0,),
-                                 max_intentos: int = 4000) -> Optional[Escenario]:
-    """Copia provisional del generador de ARQUITECTURA.md seccion 4 (modulo 4).
-
-    Se reemplaza por escenarios.generar_cluster cuando exista el modulo 4.
-    """
-    rnd = random.Random(semilla)
-    tamanos = tuple(rnd.randint(1, 4) for _ in range(n_vms))
-    capacidad = int(sum(tamanos) / (n_servidores - 1) * factor) + 1
-    capacidades = (capacidad,) * n_servidores
-    for _ in range(max_intentos):
-        inicial = tuple(rnd.randrange(n_servidores) for _ in range(n_vms))
-        esc = Escenario(capacidades, tamanos, inicial, servidor_a_vaciar)
-        carga = cargas(esc, inicial)
-        if max(carga) <= capacidad and all(carga[j] > 0 for j in ocupados):
-            return esc
-    return None
+from modelo import Escenario, Estado, es_meta, sucesores
 
 
 def espacio_completo(esc: Escenario) -> tuple[set[Estado], list[tuple[Estado, Estado, int]]]:

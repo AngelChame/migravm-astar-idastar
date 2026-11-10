@@ -3,9 +3,9 @@ import statistics
 import pytest
 
 from buscadores import Resultado, a_estrella, buscar, costo_uniforme, ida_estrella, voraz
+from escenarios import generar_cluster
 from heuristicas import h0, h1, h2
 from modelo import Accion, Escenario, validar_plan
-from utilidades import _generar_cluster_provisional
 
 EJEMPLO = Escenario(
     capacidades=(6, 6, 6, 6),
@@ -146,7 +146,7 @@ def no_triviales_8x24():
     clusteres = []
     no_triviales = []
     for semilla in range(60):
-        esc = _generar_cluster_provisional(semilla, 8, 24, factor=1.03, servidor_a_vaciar=0)
+        esc = generar_cluster(semilla, 8, 24, factor=1.03, servidor_a_vaciar=0)
         if esc is None:
             continue
         clusteres.append(esc)

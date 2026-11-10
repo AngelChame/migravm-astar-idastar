@@ -1,8 +1,9 @@
 import pytest
 
+from escenarios import generar_cluster
 from heuristicas import HEURISTICAS, h0, h1, h2
 from modelo import Accion, Escenario, aplicar, es_meta
-from utilidades import _generar_cluster_provisional, costos_optimos, espacio_completo
+from utilidades import costos_optimos, espacio_completo
 
 EJEMPLO = Escenario(
     capacidades=(6, 6, 6, 6),
@@ -47,8 +48,8 @@ def test_h2_suma_el_menor_tamano_de_todas_las_vm():
     assert h2(esc, esc.inicial) == 3 + 1
 
 
-def test_generador_provisional_semilla_0():
-    esc = _generar_cluster_provisional(0, 8, 24)
+def test_generador_semilla_0():
+    esc = generar_cluster(0, 8, 24)
     assert esc is not None
     assert esc.capacidades == (10,) * 8
     assert esc.tamanos[:6] == (4, 4, 1, 3, 4, 4)
@@ -59,7 +60,7 @@ def test_verificacion_espacio_completo():
     t = dict(escenarios=0, estados=0, sin_solucion=0, viol_adm_h1=0, viol_adm_h2=0,
              viol_cons_h1=0, viol_cons_h2=0, h2_mayor_h1=0)
     for semilla in range(40):
-        esc = _generar_cluster_provisional(semilla, 4, 7, factor=1.15)
+        esc = generar_cluster(semilla, 4, 7, factor=1.15)
         if esc is None:
             continue
         vistos, aristas = espacio_completo(esc)
