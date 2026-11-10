@@ -1,5 +1,6 @@
 import csv
 from dataclasses import fields, replace
+from pathlib import Path
 
 import pytest
 
@@ -11,7 +12,7 @@ from medicion import (
     medir,
     resumen_por_algoritmo,
 )
-from medicion.correr import CONFIGURACIONES, COLUMNAS_RESUMEN
+from medicion.correr import CONFIGURACIONES, COLUMNAS_RESUMEN, cargar_tamano
 from medicion.correr import main as correr_main
 from medicion.nucleo import _leer_csv
 from modelo import Escenario
@@ -206,3 +207,81 @@ def test_linea_de_comandos_4x7(tmp_path):
     assert tuple(filas[0]) == COLUMNAS_RESUMEN
     assert [(f["algoritmo"], f["heuristica"], f["casos"]) for f in filas] == [
         (a, h, "30") for a, h, _ in CONFIGURACIONES["4x7"]]
+
+
+# --- Tabla de cinco tamanos (medicion/resultados/ versionado) ---
+
+RAIZ = Path(__file__).resolve().parent.parent
+RESULTADOS = RAIZ / "medicion" / "resultados"
+DATOS = RAIZ / "escenarios" / "datos"
+TAMANOS = list(CONFIGURACIONES)
+
+
+def _mediciones(tamano):
+    return _leer_csv(RESULTADOS / f"mediciones_{tamano}.csv")
+
+
+def test_resultados_archivos_exactos():
+    esperados = {f"mediciones_{t}.csv" for t in TAMANOS} | {"resumen.csv"}
+    assert {p.name for p in RESULTADOS.iterdir()} == esperados
+    assert sum(len(_mediciones(t)) for t in TAMANOS) == 840
+
+
+@pytest.mark.parametrize("tamano", TAMANOS)
+def test_resultados_filas_por_tamano(tamano):
+    mediciones = _mediciones(tamano)
+    escenarios, optimos = cargar_tamano(DATOS, tamano)
+    configs = CONFIGURACIONES[tamano]
+    assert [(m.escenario, m.algoritmo, m.heuristica) for m in mediciones] == [
+        (esc.nombre, a, h) for esc in escenarios for a, h, _ in configs]
+    con_memoria = {(a, h) for a, h, m in configs if m}
+    for m in mediciones:
+        assert m.tope_nodos == TOPE
+        assert m.costo_optimo == optimos[m.escenario]
+        assert (m.memoria_pico_kb is not None) == ((m.algoritmo, m.heuristica) in con_memoria)
+        assert m.tiempo_cpu_s > 0
+        if m.estado == "resuelto":
+            assert m.migraciones is not None and m.migraciones >= 1
+            if m.algoritmo == "voraz":
+                assert m.costo >= m.costo_optimo
+            else:
+                assert m.costo == m.costo_optimo
+        else:
+            assert m.estado == "tope"
+            assert (m.costo, m.migraciones, m.nodos_expandidos) == (None, None, TOPE)
+
+
+@pytest.mark.parametrize("tamano", TAMANOS)
+def test_resultados_se_reproducen_en_las_configuraciones_baratas(tamano):
+    baratas = [("voraz", "h2"), ("ida", "h2")]
+    if tamano in ("4x7", "5x10", "6x16"):
+        baratas.append(("astar", "h2"))
+    guardadas = {(m.escenario, m.algoritmo, m.heuristica): m for m in _mediciones(tamano)}
+    escenarios, optimos = cargar_tamano(DATOS, tamano)
+    for m in correr_lote(escenarios, baratas, TOPE, costos_optimos=optimos, tiempo_minimo_s=0):
+        g = guardadas[(m.escenario, m.algoritmo, m.heuristica)]
+        assert replace(m, tiempo_cpu_s=0.0, memoria_pico_kb=None) == replace(
+            g, tiempo_cpu_s=0.0, memoria_pico_kb=None)
+
+
+def test_resumen_coincide_con_las_mediciones():
+    with open(RESULTADOS / "resumen.csv", encoding="utf-8", newline="") as archivo:
+        lector = csv.DictReader(archivo)
+        assert tuple(lector.fieldnames) == COLUMNAS_RESUMEN
+        leidas = list(lector)
+    esperadas = []
+    for tamano in TAMANOS:
+        mediciones = _mediciones(tamano)
+        for fila in resumen_por_algoritmo(mediciones):
+            esperadas.append({"servidores": mediciones[0].servidores,
+                              "vms": mediciones[0].vms, "tope_nodos": TOPE, **fila})
+    assert len(leidas) == len(esperadas) == 28
+    for leida, esperada in zip(leidas, esperadas):
+        for clave in COLUMNAS_RESUMEN:
+            valor = esperada[clave]
+            if valor is None:
+                assert leida[clave] == ""
+            elif isinstance(valor, (int, float)):
+                assert float(leida[clave]) == pytest.approx(valor)
+            else:
+                assert leida[clave] == valor
