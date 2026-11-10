@@ -115,8 +115,7 @@ Comportamiento:
 - `aplicar` lanza `ValueError` si la acción no es válida en ese estado o si `accion.origen` no coincide con `estado[accion.vm]`.
 - `sucesores` devuelve las acciones válidas **en este orden fijo**: `vm` ascendente y, dentro de cada VM, `destino` ascendente. El orden importa porque determina el desempate y los conteos de nodos (sección 5).
 - `validar_plan` devuelve el costo total si el plan es válido y lanza `PlanInvalido` con un mensaje si: alguna acción no es aplicable en su paso (incluye exceder una capacidad o migrar hacia X) o el estado final no es meta. Un plan vacío es válido solo si el estado inicial ya es meta (costo 0).
-- `con_servidor_a_vaciar` devuelve una copia con otro X (el `nombre` no cambia) y lanza `EscenarioInvalido` si el servidor está fuera de rango.
-- `con_servidor_a_vaciar` devuelve una copia del escenario con otro X y lanza `EscenarioInvalido` si `servidor` está fuera de `0..H-1`. No cambia capacidades, tamaños ni estado inicial.
+- `con_servidor_a_vaciar` devuelve una copia del escenario con otro X y lanza `EscenarioInvalido` si `servidor` está fuera de `0..H-1`. No cambia capacidades, tamaños ni estado inicial. El nombre no cambia.
 
 ### Módulo 2: `heuristicas/`
 
@@ -290,7 +289,7 @@ Los conteos de nodos dependen de estos detalles. Si se cambian, los valores de l
 - **`nodos_expandidos`:** cantidad de nodos **no meta** a los que se les generaron sucesores. El nodo meta no cuenta. En IDA\*, es el total acumulado de todas las iteraciones. Un nodo cuenta al entrar con `f <= cota`.
 - **`tope_nodos`:** si la siguiente expansión superaría el tope, se devuelve `estado = "tope"` y `nodos_expandidos == tope_nodos`.
 - **`estados_guardados`:** en costo uniforme y A\*, el número de estados con un `g` guardado al terminar; en voraz, el número de estados vistos; en IDA\*, el mayor tamaño de la tabla de transposición en una iteración (sin transposición, la mayor profundidad del camino actual).
-- **IDA\*:** la cota inicial es `h(s0)`; la nueva cota es el menor `f` que excedió la anterior; si no excedió ninguno, no hay solución. Los sucesores se recorren en el orden del módulo 1. Con transposición, un sucesor se omite si la tabla ya tiene un `g` menor o igual para ese estado en la iteración actual.
+- **IDA\*:** la cota inicial es `h(s0)`; la nueva cota es el menor `f` que excedió la anterior; si no excedió ninguno, no hay solución. Los sucesores se recorren en el orden del módulo 1. Con transposición, un sucesor se omite si la tabla ya tiene un `g` menor o igual para ese estado en la iteración actual. Sin transposición, un sucesor se omite si su estado ya está en el camino actual (de lo contrario IDA\* no termina en escenarios sin solución con ciclos).
 - **Sin solución:** si la frontera se vacía (o IDA\* no tiene nuevo `f`), se devuelve `"sin_solucion"`.
 
 ## 6. Valores de verificación
