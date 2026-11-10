@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from buscadores import buscar
 from medicion import (
     COLUMNAS_MEDICION,
     Medicion,
@@ -49,6 +50,29 @@ def test_medir_repite_hasta_el_tiempo_minimo():
     repetida = medir(EJEMPLO, "ida", "h2", tiempo_minimo_s=0.05)
     assert repetida.tiempo_cpu_s > 0
     assert replace(repetida, tiempo_cpu_s=0.0) == replace(una, tiempo_cpu_s=0.0)
+
+
+def test_medir_promedia_las_repeticiones(monkeypatch):
+    import medicion.nucleo as nucleo
+    reloj = [0.0]
+    llamadas = []
+    resultado = buscar(EJEMPLO, "astar", "h2", TOPE)
+
+    def buscador_falso(esc, algoritmo, heuristica, tope_nodos):
+        def correr():
+            llamadas.append(1)
+            reloj[0] += 0.25
+            return resultado
+        return correr
+
+    monkeypatch.setattr(nucleo, "_buscador", buscador_falso)
+    monkeypatch.setattr(nucleo.time, "process_time", lambda: reloj[0])
+    m = medir(EJEMPLO, "astar", "h2", TOPE, tiempo_minimo_s=1.0)
+    assert len(llamadas) == 4 and m.tiempo_cpu_s == 0.25
+    llamadas.clear()
+    reloj[0] = 0.0
+    m = medir(EJEMPLO, "astar", "h2", TOPE, tiempo_minimo_s=0)
+    assert len(llamadas) == 1 and m.tiempo_cpu_s == 0.25
 
 
 def test_medir_ucs_reporta_h0_e_ida_sus_iteraciones():
@@ -140,6 +164,7 @@ def test_escribir_csv_columnas_exactas_y_valores(tmp_path):
                              tiempo_minimo_s=0)
     ruta = tmp_path / "sub" / "mediciones.csv"
     escribir_csv(mediciones, ruta)
+    assert b"\r" not in ruta.read_bytes()
     with open(ruta, encoding="utf-8", newline="") as archivo:
         filas = list(csv.reader(archivo))
     assert tuple(filas[0]) == COLUMNAS_MEDICION
@@ -198,6 +223,10 @@ def test_configuraciones_por_tamano():
 def test_linea_de_comandos_4x7(tmp_path):
     correr_main(["--tamanos", "4x7", "--tiempo-minimo", "0", "--salida", str(tmp_path)])
     mediciones = _leer_csv(tmp_path / "mediciones_4x7.csv")
+    nombres = [m.escenario for m in mediciones]
+    assert nombres == [n for n in dict.fromkeys(nombres) for _ in range(6)]
+    assert [(m.algoritmo, m.heuristica) for m in mediciones] == (
+        [(a, h) for a, h, _ in CONFIGURACIONES["4x7"]] * 30)
     assert len(mediciones) == 30 * 6
     assert all(m.tope_nodos == TOPE for m in mediciones)
     optimos = [m for m in mediciones if m.algoritmo != "voraz" and m.estado == "resuelto"]
