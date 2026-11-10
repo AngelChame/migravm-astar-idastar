@@ -1,4 +1,5 @@
 import csv
+import inspect
 from dataclasses import replace
 from pathlib import Path
 
@@ -168,6 +169,19 @@ def test_generar_no_triviales_nombres_y_orden():
         claves.append((semilla, esc.servidor_a_vaciar))
     assert claves == sorted(claves)
     assert len(set(claves)) == len(claves)
+
+
+def test_generar_no_triviales_cantidad_corta_a_mitad_de_cluster():
+    completa = generar_no_triviales(4, 7, 16, TOPE)
+    for cantidad in range(1, 16):
+        parcial = generar_no_triviales(4, 7, cantidad, TOPE)
+        assert len(parcial) == cantidad
+        assert parcial == completa[:cantidad]
+
+
+def test_generar_no_triviales_usa_ida_por_omision():
+    parametro = inspect.signature(generar_no_triviales).parameters["algoritmo"]
+    assert parametro.default == "ida"
 
 
 def test_generar_no_triviales_ida_y_astar_coinciden_en_6x16():
